@@ -113,6 +113,30 @@ def make_projector_array(projection_order, process_tomo=False):
         [veckron(*kets) for kets in itertools.product(*views)], dtype=complex
     )
 
+def get_available_memory(device='cuda'):
+    """
+    Get the available GPU memory in bytes.
+    Args:
+        device (str): The device to query (e.g., 'cuda:0').
+    Returns:
+        int: Available memory in bytes.
+    """
+    if torch.cuda.is_available():
+        gpu_memory = torch.cuda.get_device_properties(device).total_memory
+        reserved_memory = torch.cuda.memory_reserved(device)
+        allocated_memory = torch.cuda.memory_allocated(device)
+        free_memory = reserved_memory - allocated_memory
+        return free_memory
+    else:
+        raise RuntimeError("CUDA is not available.")
+    
+def guess_needed_memory(batch,dim, projs):
+    rpv_size = dim*dim*projs*dtype.itemsize
+    rhos_size = batch*dim*dim*dtype.itemsize
+    k_size = dim*dim*dtype.itemsize
+    proj_sum_size = dim*dim*dtype.itemsize
+    total = rpv_size+rhos_size+k_size+proj_sum_size
+    return rpv_size, rhos_size, k_size, proj_sum_size, total
 
 def gram_schmidt(X, row_vecs=False, norm=True):
     """
@@ -214,34 +238,27 @@ class Reconstructer:
         """
         return self.reconstruct(data)
 
-    def reconstruct(self, data):
+    def reconstruct(self, datas):
         """Reconstruct data into density matrix using parameters of the Reconstructer object.
 
         Args:
-            data (ndarray[int] or ndarray[float]): input tomogram. It should have as many entries as there is projectors.
+            data (ndarray[int] or ndarray[float]): input tomogram. Shape (m, n), where is number of tomograms, and n is number of measured projectors.
 
         Returns:
-            ndarray[complex]: reconstructed and trace-normed density matrix
+            ndarray[complex]: reconstructed and trace-normed density matrix, (m,d,d).
         """
-        sel = np.asarray(data) > 0
-        aux_rpv_columns = self.aux_rpv_cols[:, sel]
-        _data_in = np.asarray(data[sel], dtype=np.float32)
-        data_in = torch.from_numpy(_data_in).to(fdtype).cuda(device= device)        
-        # these will mutate
-        _rho = np.eye(self.dim1, dtype=np.complex128) / self.dim1
-        rho = torch.from_numpy(_rho).to(dtype).cuda(device= device)        
-        _rho_old = np.copy(_rho)
-        rho = torch.from_numpy(_rho_old).to(dtype).cuda(device= device)
 
+        _data_in = np.asarray(datas, dtype=np.float32)
+        data_in = torch.from_numpy(_data_in).to(fdtype).cuda(device= device)        
+        aux_rpv_columns = self.aux_rpv_cols
         rho, iteration, distance = self.reconstruct_loop_torch(
             data_in,
             self.max_iters,
             self.thres,
-            aux_rpv_columns,
-            rho,
+            aux_rpv_columns,        
             self.proj_sum_inv,
         )
-        print('stopped at', iteration, distance)
+        print('stopped at', iteration, distance.cpu().numpy())
         self.last_counter = iteration
         self.last_distance = distance
         return rho.cpu().numpy()
@@ -252,7 +269,6 @@ class Reconstructer:
         max_iters,
         thres,
         aux_rpv_columns,
-        rho,
         renorm=False,
         proj_sum_inv=None,
         check_every=10
@@ -275,43 +291,52 @@ class Reconstructer:
             int: iteration count
             float: final distance
         """
-        device = rho.device
-        dtype = rho.dtype
+        device = aux_rpv_columns.device
+        dtype = aux_rpv_columns.dtype
 
-        # data_in = data_in.to(dtype=fdtype, device=device)
-        # aux_rpv_columns = aux_rpv_columns.to(dtype=dtype, device=device)
-        # rho = rho.clone()
-        rho_old = rho.clone()
-
-        dim1, dim2 = rho.shape
         dim_proj, n_proj = aux_rpv_columns.shape
+        dim1 = int(np.sqrt(dim_proj))
+        dim2 = dim1
+        batch_size, n_proj_data = data_in.shape
+        assert n_proj_data == n_proj
+        
+        rho_old = torch.eye(dim1, dtype=dtype, device=device).unsqueeze(0).repeat(batch_size, 1, 1).detach()
+        rho = rho_old.clone().detach()
+
+        final_distances = torch.zeros(batch_size, dtype=torch.float32, device=device)
 
         for counter in range(max_iters):
             rho_old.copy_(rho)
 
-            # Calculate probabilities
-            probs = torch.matmul(rho.view(1, -1), aux_rpv_columns).real.view(-1)
+            # Calculate probabilities (batched)
+            probs = torch.matmul(rho.view(batch_size, 1, -1), aux_rpv_columns).real.view(batch_size, -1)
             scaler_vect = data_in / probs
 
-            # Build K operator
-            weighted = aux_rpv_columns @ scaler_vect.to(dtype=dtype).view(-1, 1)
-            k_operator = weighted.view(dim1, dim2).T
+            # Build K operator (batched)
+            weighted = torch.matmul(aux_rpv_columns, scaler_vect.T.to(dtype=dtype))
+            k_operator = weighted.T.view(batch_size, dim1, dim2).transpose(-2, -1)
 
-            # Contractive map update
+            # Contractive map update (batched)
             if renorm and proj_sum_inv is not None:
-                rho = proj_sum_inv @ k_operator @ rho @ k_operator @ proj_sum_inv
+                rho = torch.matmul(
+                    proj_sum_inv @ k_operator, torch.matmul(rho, k_operator)
+                ) @ proj_sum_inv
             else:
-                rho = k_operator @ rho @ k_operator
+                rho = torch.matmul(k_operator, torch.matmul(rho, k_operator))
 
-            rho /= torch.trace(rho)
+            # Normalize (batched)
+            traces = torch.einsum('bii->b', rho).view(batch_size, 1, 1)
+            rho /= traces
 
-            # Convergence check (Frobenius distance)
+            # Convergence check (batched Frobenius distance)
             if (counter % check_every) == 0:
-                distance = torch.linalg.norm(rho - rho_old).real.item()
-                if distance <= thres:
+                distances = torch.linalg.norm(rho - rho_old, dim=(-2, -1)).real
+                converged = distances <= thres
+                if converged.all():    
+                    final_distances[converged] = distances[converged]
                     break
 
-        return rho, counter + 1, distance
+        return rho, counter, final_distances
 
 if __name__ == '__main__':
     from time import time
@@ -321,9 +346,10 @@ if __name__ == '__main__':
     Minus = (LO-HI)*(2**-.5)
     RPlu = (LO+1j*HI)*(2**-.5)
     RMin = (LO-1j*HI)*(2**-.5)
+    QUBITS = 6
     
     print('Defining measurements...')
-    Order = [[LO,HI,Plus,Minus,RPlu,RMin]]*6 #Definion of measurement order, matching data order
+    Order = [[LO,HI,Plus,Minus,RPlu,RMin]]*QUBITS #Definion of measurement order, matching data order
     #|01+-RL> state
     ket_gt = reduce(np.kron, [LO, HI, Plus, Minus, RPlu, RMin])
     rho_gt = ket_gt @ ket_gt.T.conj()
@@ -331,37 +357,81 @@ if __name__ == '__main__':
 
     print('Generating data...')
     probs = 1e-6 + np.array([np.abs(pi.T @ ket_gt)**2 for pi in pis]).ravel()
+    my_data = np.array([probs + 1e-4 for _ in range(8)])
+    N = my_data.shape[0]
+
 
     print('Initialization of Reconstructer...')
+    t0 = time()
     R = Reconstructer(pis, 100, 1e-6, False, False)
+    t1 = time()
+    print(t1-t0, 'sec')
+
     print('Reconstruction pro forma (1 cycle)')
-    R.max_iters = 5
-    rho = R.reconstruct(probs)
-
-
-
-    print('Reconstruction actually, trying in paralel')
+    R.max_iters = 1
+    rho = R.reconstruct(my_data)
     R.max_iters = 100
-    my_data = [probs, np.copy(probs)+1e-3, np.copy(probs)+1e-2]
-    t0 = time()
-    with ThreadPoolExecutor(3) as executor:
-        rhos = list(executor.map(R.reconstruct, my_data))
-    t1 = time()
-    print('Paralel')
-    print(t1-t0, 'sec')
-    print((t1-t0)/3, 'sec per data')
-    print("Purity")
-    for r in rhos:
-        print(np.trace(r @ r))
 
+    print("Run batch")
     t0 = time()
-    rhos = []
-    for _d in my_data:
-        rhos.append(R.reconstruct(_d))
+    rhos = R.reconstruct(my_data)
     t1 = time()
-    print('Sequential')
     print(t1-t0, 'sec')
-    print((t1-t0)/3, 'sec per data')
-    print("Purity")
+    print((t1-t0)/N, 'sec per tomogram')
+
     for r in rhos:
-        print(np.trace(r @ r))
+        print(np.trace(r @ r).real)
+
+
+# if __name__ == '__main__':
+#     from time import time
+#     LO = np.array([[1],[0]])
+#     HI = np.array([[0],[1]])
+#     Plus = (LO+HI)*(2**-.5)
+#     Minus = (LO-HI)*(2**-.5)
+#     RPlu = (LO+1j*HI)*(2**-.5)
+#     RMin = (LO-1j*HI)*(2**-.5)
+    
+#     print('Defining measurements...')
+#     Order = [[LO,HI,Plus,Minus,RPlu,RMin]]*6 #Definion of measurement order, matching data order
+#     #|01+-RL> state
+#     ket_gt = reduce(np.kron, [LO, HI, Plus, Minus, RPlu, RMin])
+#     rho_gt = ket_gt @ ket_gt.T.conj()
+#     pis = make_projector_array(Order, False) #Prepare (Rho)-Pi vect  
+
+#     print('Generating data...')
+#     probs = 1e-6 + np.array([np.abs(pi.T @ ket_gt)**2 for pi in pis]).ravel()
+
+#     print('Initialization of Reconstructer...')
+#     R = Reconstructer(pis, 100, 1e-6, False, False)
+#     print('Reconstruction pro forma (1 cycle)')
+#     R.max_iters = 5
+#     rho = R.reconstruct(probs)
+
+
+
+#     print('Reconstruction actually, trying in paralel')
+#     R.max_iters = 100
+#     my_data = [probs, np.copy(probs)+1e-4, np.copy(probs)+1e-3]
+#     t0 = time()
+#     with ThreadPoolExecutor(3) as executor:
+#         rhos = list(executor.map(R.reconstruct, my_data))
+#     t1 = time()
+#     print('Paralel')
+#     print(t1-t0, 'sec')
+#     print((t1-t0)/3, 'sec per data')
+#     print("Purity")
+#     for r in rhos:
+#         print(np.trace(r @ r))
+
+#     t0 = time()
+#     rhos = []
+#     for _d in my_data:
+#         rhos.append(R.reconstruct(_d))
+#     t1 = time()
+#     print('Sequential')
+#     print(t1-t0, 'sec')
+#     print((t1-t0)/3, 'sec per data')
+#     print("Purity")
+#     for r in rhos:
+#         print(np.trace(r @ r))
