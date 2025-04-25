@@ -328,7 +328,7 @@ if __name__ == '__main__':
     print('Initialization of Reconstructer...')
     R = Reconstructer(pis, 100, 1e-6, False, False)
     print('Reconstruction pro forma (1 cycle)')
-    R.max_iters = 5
+    R.max_iters = 2
     rho = R.reconstruct(probs)
 
     print('Reconstruction actual')
@@ -336,3 +336,4 @@ if __name__ == '__main__':
     %timeit rho = R.reconstruct(probs)
     print("Purity")
     print(np.trace(rho @ rho))
+    #8.2 sec per 100 iters
