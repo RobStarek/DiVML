@@ -1,5 +1,5 @@
 import numpy as np
-from dvml.backend_template import BackendTemplate
+from dvml.backend.backend_template import BackendTemplate
 
 
 class TorchBackend(BackendTemplate):

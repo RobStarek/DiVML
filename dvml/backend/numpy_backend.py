@@ -10,7 +10,7 @@ except ImportError:
     logging.warning("Numba could not be imported.")
     def njit(f):
         return f
-from dvml.backend_template import BackendTemplate
+from dvml.backend.backend_template import BackendTemplate
 
 
 def gram_schmidt(X, row_vecs=False, norm=True):
