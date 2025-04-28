@@ -4,9 +4,9 @@ from .backend import get_backend
 class Reconstructer(object):
     
     
-    def __init__(self, meas_description):
+    def __init__(self, meas_description, **kwargs):
         self._backend = get_backend()()
-        self._backend.initialize(meas_description)
+        self._backend.initialize(meas_description, **kwargs)
         pass
 
     def reconstruct(self, data):

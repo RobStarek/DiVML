@@ -1,5 +1,7 @@
 import logging
 logger = logging.getLogger(__name__)
+from concurrent.futures import ProcessPoolExecutor
+import functools
 
 import numpy as np
 try:
@@ -13,7 +15,7 @@ except ImportError:
 from dvml.backend.backend_template import BackendTemplate
 
 
-def gram_schmidt(X, row_vecs=False, norm=True):
+def _gram_schmidt(X, row_vecs=False, norm=True):
     """
     Vectorized Gramm-Schmidt orthogonalization.
     Creates an orthonormal system of vectors spanning the same vector space
@@ -44,32 +46,36 @@ def gram_schmidt(X, row_vecs=False, norm=True):
 class NumpyBackend(BackendTemplate):
 
     def __init__(self):
-        super().__init__()
+        super().__init__()        
 
     def initialize(self, measurement_description, *args, **kwargs):
         """
         Initialize the backend with measurement description.
         measurement_description : nparray describing the measurements
         """
+        print("init...")
         renorm = kwargs.get('renorm', False)
-        rpv_has_ops = kwargs.get('rpv_has_ops', False)
+        md_has_ops = kwargs.get('md_has_ops', False)
         max_iters = kwargs.get('max_iters', 100)
         thres = kwargs.get('thres', 1e-6)
-        rpv = measurement_description
+        self.paralelize = kwargs.get('paralelize', False)
+        self.batch_size = kwargs.get('batch_size', 4)
+        print(kwargs)
+        
    
-        dim = rpv.shape[1]
+        dim = measurement_description.shape[1]
         self.renorm = renorm
-        if not rpv_has_ops:
+        if not md_has_ops:
             # construct projector operators (using outer product) from kets
-            rp_rho = np.array(
+            meas_ops = np.array(
                 [np.einsum("i,j", ket.ravel(), ket.conj().ravel())
-                 for ket in rpv]
+                 for ket in measurement_description]
             )
         else:
-            rp_rho = rpv
-        self.n_proj, self.dim1, self.dim2 = rp_rho.shape
+            meas_ops = measurement_description
+        self.n_proj, self.dim1, self.dim2 = meas_ops.shape
         # this is equivalent to np.out plus sum raveling and transpoistion
-        self.aux_rpv_cols = np.einsum("ijk->kji", rp_rho).reshape(
+        self.aux_rpv_cols = np.einsum("ijk->kji", meas_ops).reshape(
             (self.dim1 * self.dim2, self.n_proj)
         )
         self.max_iters = max_iters
@@ -90,7 +96,7 @@ class NumpyBackend(BackendTemplate):
                 )
                 > dim * 1e-14
             ):
-                proj_sum_evec = gram_schmidt(proj_sum_evec, False, True)
+                proj_sum_evec = _gram_schmidt(proj_sum_evec, False, True)
             proj_sum_diag_inv = np.diag(proj_sum_eval**-1)
             self.proj_sum_inv = (
                 proj_sum_evec @ proj_sum_diag_inv @ proj_sum_evec.T.conjugate()
@@ -104,10 +110,22 @@ class NumpyBackend(BackendTemplate):
         self.max_iters = max_iters
 
     def set_parameters(self, *args, **kwargs):
-        pass
+        self.max_iters = kwargs.get('max_iters', self.max_iters)
+        self.thres = kwargs.get('thres', self.thres)
 
-    def reconstruct_data(self, tomograms, *args, **kwargs):      
-        return [self.reconstruct(t) for t in tomograms]
+
+    def reconstruct_data(self, tomograms, *args, **kwargs):
+        if self.paralelize:
+            logger.info('running in paralel')
+            entries = len(tomograms)
+            chunksize = int(entries/self.batch_size)+1
+            foo = functools.partial(self.reconstruct)
+
+            with ProcessPoolExecutor(self.batch_size) as executor:
+                results = executor.map(foo, tomograms, chunksize=chunksize)
+                return list(results)
+        else:
+            return [self.reconstruct(t) for t in tomograms]
 
 
     def reconstruct(self, data):
