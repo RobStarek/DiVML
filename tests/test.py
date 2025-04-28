@@ -28,10 +28,11 @@ if __name__ == '__main__':
     print('Generating data...')
     probs = 1e-6 + np.array([np.abs(pi.T @ ket_gt)**2 for pi in pis]).ravel()
     print(probs)
-    my_data = [probs, probs]*64
+    my_data = np.array([probs, probs]*64)
 
     R = dvml.Reconstructer(pis, paralelize=True)
     print(R)
+    
     outs = R.reconstruct(my_data)
     outs = np.array(outs)
     print(outs.shape)

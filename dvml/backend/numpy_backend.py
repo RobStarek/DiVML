@@ -1,6 +1,7 @@
 import logging
 logger = logging.getLogger(__name__)
 from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import cpu_count
 import functools
 
 import numpy as np
@@ -52,16 +53,13 @@ class NumpyBackend(BackendTemplate):
         """
         Initialize the backend with measurement description.
         measurement_description : nparray describing the measurements
-        """
-        print("init...")
+        """        
         renorm = kwargs.get('renorm', False)
         md_has_ops = kwargs.get('md_has_ops', False)
         max_iters = kwargs.get('max_iters', 100)
         thres = kwargs.get('thres', 1e-6)
-        self.paralelize = kwargs.get('paralelize', False)
-        self.batch_size = kwargs.get('batch_size', 4)
-        print(kwargs)
-        
+        self.paralelize = kwargs.get('paralelize', True)
+        self.batch_size = kwargs.get('batch_size', cpu_count() - 1 )
    
         dim = measurement_description.shape[1]
         self.renorm = renorm
