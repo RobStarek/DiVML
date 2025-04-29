@@ -56,6 +56,7 @@ pis_ravel = np.transpose(
     axes=(0,2,1)
 ).reshape(6,4)
 data = (rhos_mixed @ pis_ravel.T).real.reshape((h,w,6)).astype(np.float32) + 1e-6
+data = np.clip(np.random.normal(data, 1e-2), 0, None)
 np.save('dragon_tomo.npy', data)
 
 # -------- Load generated data----------
