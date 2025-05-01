@@ -21,7 +21,6 @@ def veckron(*vecs):
         return vecs[0]
     if n > 9:
         return functools.reduce(np.kron, vecs, np.eye(1, dtype=complex))
-    # EINSUM_EXPRS_VEC[len(vecs)-2],
     return np.einsum(_ALPHABET[0: 2 * n - 1], *(v.ravel() for v in vecs)).reshape(-1, 1)
 
 

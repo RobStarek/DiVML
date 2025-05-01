@@ -30,6 +30,9 @@ thetas = 0.5*np.pi*dragon[:,:,0]
 phis = np.pi*2*(dragon[:,:,1]-0.5)
 dop = 1 - dragon[:,:,2]
 
+
+## Slower, but more readable generation of 
+## density matrices
 # # def make_rho(theta, phi, dop):
 # #     ket = np.array((np.cos(theta), np.sin(theta)*np.exp(1j*phi))).reshape((2,1))
 # #     rho_pure = ket @ ket.T.conj()
@@ -38,7 +41,7 @@ dop = 1 - dragon[:,:,2]
 # # rhos = np.array([make_rho(*args) for args in tqdm(dragon.reshape(-1,3))])
 # # rhos = rhos.reshape(h, w, 2, 2)
 
-# #Faster equivalent
+# #Faster equivalent, vectorized approach.
 ket = np.vstack((
     np.cos(thetas.ravel()),
     np.sin(thetas.ravel())*np.exp(1j*phis.ravel())

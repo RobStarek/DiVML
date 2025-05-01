@@ -5,8 +5,12 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import importlib
 import dvml
 import dvml.utils
+
+importlib.reload(dvml)
+importlib.reload(dvml.utils)
 from multiprocessing import Process, freeze_support
 
 if __name__ == '__main__':
@@ -30,6 +34,7 @@ if __name__ == '__main__':
     print(probs)
     my_data = np.array([probs, probs]*64)
 
+    
     R = dvml.Reconstructer(pis, paralelize=True)
     print(R)
     

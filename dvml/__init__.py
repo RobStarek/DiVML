@@ -12,11 +12,8 @@ from dvml.backend import get_backend
 from dvml.utils import make_projector_array
 
 logger = logging.getLogger(__name__)
-logging.info("Init of dvml module.")
-logging.info(str(get_backend()))
 
 __all__ = ["Reconstructer", "make_projector_array"]
-print("Init of main dvml.")
 
 
 # import importlib

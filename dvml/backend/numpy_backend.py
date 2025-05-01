@@ -1,3 +1,26 @@
+"""
+This module provides a Numpy-based backend for density matrix reconstruction using 
+iterative algorithms. It includes a vectorized Gram-Schmidt orthogonalization function 
+optimized for Numba, as well as a `NumpyBackend` class that implements the reconstruction 
+process.
+Classes:
+    NumpyBackend: Implements the backend for reconstructing density matrices from 
+                  tomographic data using Numpy and optional parallelization.
+Functions:
+    _gram_schmidt(input_col_vectors): Performs vectorized Gram-Schmidt orthogonalization 
+                                      to create an orthonormal system of vectors.
+    _nb_reconstution_loop_vect(data_in, max_iters, tres, aux_rpv_columns, rho, rho_old, 
+                               k_operator, probs, scaler_vect, renorm, proj_sum_inv): 
+                               Numba-optimized iterative reconstruction loop.
+Usage:
+    This module is designed to be used as part of a larger framework for quantum state 
+    tomography. The `NumpyBackend` class can be initialized with measurement descriptions 
+    and used to reconstruct density matrices from tomographic data.
+
+Returns:
+    _type_: _description_
+"""
+
 import logging
 logger = logging.getLogger(__name__)
 from concurrent.futures import ProcessPoolExecutor
@@ -16,33 +39,68 @@ except ImportError:
 from dvml.backend.backend_template import BackendTemplate
 
 
-def _gram_schmidt(X, row_vecs=False, norm=True):
+
+@njit
+def _gram_schmidt(input_col_vectors):
     """
     Vectorized Gramm-Schmidt orthogonalization.
     Creates an orthonormal system of vectors spanning the same vector space
     which is spanned by vectors in matrix X.
 
     Args:
-        X: matrix of vectors
-        row_vecs: are vectors store as line vectors? (if not, then use column vectors)
-        norm: normalize vector to unit size
+        X: matrix of col vectors
     Returns:
-        Y: matrix of orthogonalized vectors
-    Source: https://gist.github.com/iizukak/1287876#gistcomment-1348649
+        Y: matrix of orthogonalized col vectors
+    Original source: https://gist.github.com/iizukak/1287876#gistcomment-1348649
+    Modification is that arrays are allocated beforehand to make it run smoothly in numba.
     """
-    if not row_vecs:
-        X = X.T
-    Y = X[0:1, :].copy()
-    for i in range(1, X.shape[0]):
-        proj = np.diag(
-            (X[i, :].dot(Y.T) / np.linalg.norm(Y, axis=1) ** 2).flat).dot(Y)
-        Y = np.vstack((Y, X[i, :] - proj.sum(0)))
-    if norm:
-        Y = np.diag(1 / np.linalg.norm(Y, axis=1)).dot(Y)
-    if row_vecs:
-        return Y
-    else:
-        return Y.T
+    #Allocate arrays (for numba)
+    input_col_vectors = input_col_vectors.T
+    h, w = input_col_vectors.shape
+    output_col_vectors = np.zeros((h, w), dtype=np.complex64)
+    output_col_vectors[0,:] = input_col_vectors[0, :]
+    row = np.zeros((1,w), np.complex64)
+    
+    #Run Gram-Schmidt process
+    for i in range(1, input_col_vectors.shape[0]):
+        Ynorm2 = np.sum(output_col_vectors*output_col_vectors.conj(), axis = 1)    
+        Ynorm2[i:] = 1
+        row[0] = input_col_vectors[i]
+        proj = (row.dot(output_col_vectors.T) / Ynorm2).reshape((-1,1)) * output_col_vectors
+        proj[i:] = 0
+        output_col_vectors[i] = (input_col_vectors[i, ::1] - proj.sum(0))#.ravel() 
+    out_norm = np.sqrt((np.sum(output_col_vectors*output_col_vectors.conj(), axis = 1)).reshape((-1,1)))    
+    output_col_vectors = output_col_vectors/out_norm
+    return output_col_vectors.T
+
+# Original version
+# def _gram_schmidt(X, row_vecs=False, norm=True):
+#     """
+#     Vectorized Gramm-Schmidt orthogonalization.
+#     Creates an orthonormal system of vectors spanning the same vector space
+#     which is spanned by vectors in matrix X.
+
+#     Args:
+#         X: matrix of vectors
+#         row_vecs: are vectors store as line vectors? (if not, then use column vectors)
+#         norm: normalize vector to unit size
+#     Returns:
+#         Y: matrix of orthogonalized vectors
+#     Source: https://gist.github.com/iizukak/1287876#gistcomment-1348649
+#     """
+#     if not row_vecs:
+#         X = X.T
+#     Y = X[0:1, :].copy()
+#     for i in range(1, X.shape[0]):
+#         proj = np.diag(
+#             (X[i, :].dot(Y.T) / np.linalg.norm(Y, axis=1) ** 2).flat).dot(Y)
+#         Y = np.vstack((Y, X[i, :] - proj.sum(0)))
+#     if norm:
+#         Y = np.diag(1 / np.linalg.norm(Y, axis=1)).dot(Y)
+#     if row_vecs:
+#         return Y
+#     else:
+#         return Y.T
     
 class NumpyBackend(BackendTemplate):
 
@@ -94,7 +152,7 @@ class NumpyBackend(BackendTemplate):
                 )
                 > dim * 1e-14
             ):
-                proj_sum_evec = _gram_schmidt(proj_sum_evec, False, True)
+                proj_sum_evec = _gram_schmidt(proj_sum_evec)
             proj_sum_diag_inv = np.diag(proj_sum_eval**-1)
             self.proj_sum_inv = (
                 proj_sum_evec @ proj_sum_diag_inv @ proj_sum_evec.T.conjugate()
