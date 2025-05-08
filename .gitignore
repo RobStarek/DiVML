@@ -10,7 +10,8 @@ examples/__pycache__/
 
 # # Distribution / packaging
 # bin/
-# build/
+build/
+
 # develop-eggs/
 # dist/
 # eggs/
@@ -21,7 +22,7 @@ examples/__pycache__/
 # var/
 # *.egg-info/
 # .installed.cfg
-# *.egg
+*.egg
 
 # Installer logs
 pip-log.txt

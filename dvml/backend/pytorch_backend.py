@@ -335,7 +335,8 @@ class TorchBackend(BackendTemplate):
             rho = rho_old.clone()
             final_distances = torch.zeros(
                 batch_size, dtype=torch.float32, device=device)
-
+            if renorm:
+                proj_sum_inv_w = proj_sum_inv.view(1, dim1, dim2)
             for counter in range(max_iters):
                 rho_old.copy_(rho)
 

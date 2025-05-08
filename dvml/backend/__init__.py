@@ -5,6 +5,8 @@ logger = logging.getLogger(__name__)
 logging.info("Init of backend dvml.module.")
 
 _backend = None
+FORCE_NPY = True
+
 try:
     import torch
     if torch.cuda.is_available() or torch.version.cuda is not None:

@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='dvml',
+    name='DiVML',
     version='0.1.0',
-    description='Discrete-variable quantum maximum-likelihood reconstruction.',
-    author='Your Name',
-    author_email='your.email@example.com',
+    description='Discrete-variable quantum state maximum-likelihood reconstruction.',
+    author='Robert Starek',
+    author_email='starek.robert@gmail.com',
     packages=find_packages(),
     install_requires=[
         'numpy',
@@ -13,8 +13,7 @@ setup(
         'numba',
     ],
     classifiers=[
-        'Programming Language :: Python :: 3',
-        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3',        
         'Operating System :: OS Independent',
     ],
     python_requires='>=3.7',

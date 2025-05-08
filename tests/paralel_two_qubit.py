@@ -1,3 +1,8 @@
+"""
+Test of two-qubit quantum state reconstruction.
+"""
+
+
 from functools import reduce
 import numpy as np
 #Minimal example
@@ -14,7 +19,7 @@ importlib.reload(dvml.utils)
 from multiprocessing import Process, freeze_support
 
 if __name__ == '__main__':
-    # freeze_support()
+    freeze_support()
     LO = np.array([[1],[0]])
     HI = np.array([[0],[1]])
     Plus = (LO+HI)*(2**-.5)
@@ -30,7 +35,7 @@ if __name__ == '__main__':
     pis = dvml.utils.make_projector_array(Order, False) #Prepare (Rho)-Pi vect  
 
     print('Generating data...')
-    probs = 1e-6 + np.array([np.abs(pi.T @ ket_gt)**2 for pi in pis]).ravel()
+    probs = 1e-6 + np.array([np.abs(pi.T.conj() @ ket_gt)**2 for pi in pis]).ravel()
     print(probs)
     my_data = np.array([probs, probs]*64)
 
@@ -41,3 +46,6 @@ if __name__ == '__main__':
     outs = R.reconstruct(my_data)
     outs = np.array(outs)
     print(outs.shape)
+
+    print("Testing fidelity...")
+    print(np.trace(rho_gt @ outs[0]))    

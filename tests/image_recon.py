@@ -23,7 +23,7 @@ pis = make_projector_array(Order, False) #Prepare (Rho)-Pi vect
 
 
 # -------- Generate data----------
-dragon = plt.imread('dragon.png')
+dragon = plt.imread('tests/dragon.png')
 h, w, _ = dragon.shape
 
 thetas = 0.5*np.pi*dragon[:,:,0]
