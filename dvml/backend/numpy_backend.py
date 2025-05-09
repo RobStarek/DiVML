@@ -20,24 +20,21 @@ Usage:
 Returns:
     _type_: _description_
 """
-
 import logging
-logger = logging.getLogger(__name__)
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count
 import functools
-
 import numpy as np
+from dvml.backend.backend_template import BackendTemplate
+logger = logging.getLogger(__name__)
+
 try:
     import numba as nb
     njit = nb.njit
-    
 except ImportError:
-    logging.warning("Numba could not be imported.")
+    logger.warning("Numba could not be imported.")
     def njit(f):
         return f
-from dvml.backend.backend_template import BackendTemplate
-
 
 
 @njit
@@ -54,22 +51,25 @@ def _gram_schmidt(input_col_vectors):
     Original source: https://gist.github.com/iizukak/1287876#gistcomment-1348649
     Modification is that arrays are allocated beforehand to make it run smoothly in numba.
     """
-    #Allocate arrays (for numba)
+    # Allocate arrays (for numba)
     input_col_vectors = input_col_vectors.T
     h, w = input_col_vectors.shape
     output_col_vectors = np.zeros((h, w), dtype=np.complex64)
-    output_col_vectors[0,:] = input_col_vectors[0, :]
-    row = np.zeros((1,w), np.complex64)
-    
-    #Run Gram-Schmidt process
+    output_col_vectors[0, :] = input_col_vectors[0, :]
+    row = np.zeros((1, w), np.complex64)
+
+    # Run Gram-Schmidt process
     for i in range(1, input_col_vectors.shape[0]):
-        Ynorm2 = np.sum(output_col_vectors*output_col_vectors.conj(), axis = 1)    
+        Ynorm2 = np.sum(output_col_vectors*output_col_vectors.conj(), axis=1)
         Ynorm2[i:] = 1
         row[0] = input_col_vectors[i]
-        proj = (row.dot(output_col_vectors.T) / Ynorm2).reshape((-1,1)) * output_col_vectors
+        proj = (row.dot(output_col_vectors.T.conj()) /
+                Ynorm2).reshape((-1, 1)) * output_col_vectors
         proj[i:] = 0
-        output_col_vectors[i] = (input_col_vectors[i, ::1] - proj.sum(0))#.ravel() 
-    out_norm = np.sqrt((np.sum(output_col_vectors*output_col_vectors.conj(), axis = 1)).reshape((-1,1)))    
+        output_col_vectors[i] = (
+            input_col_vectors[i, ::1] - proj.sum(0))  # .ravel()
+    out_norm = np.sqrt(
+        (np.sum(output_col_vectors*output_col_vectors.conj(), axis=1)).reshape((-1, 1)))
     output_col_vectors = output_col_vectors/out_norm
     return output_col_vectors.T
 
@@ -101,24 +101,37 @@ def _gram_schmidt(input_col_vectors):
 #         return Y
 #     else:
 #         return Y.T
-    
+
+
 class NumpyBackend(BackendTemplate):
 
     def __init__(self):
-        super().__init__()        
+        # super().__init__()
+        self.renorm = None
+        self.aux_rpv_cols = None
+        self.dim1 = None
+        self.dim2 = None
+        self.last_counter = None
+        self.last_distance = None
+        self.proj_sum_inv = None
+        self.max_iters = None
+        self.thres = None
+        self.paralelize = None
+        self.batch_size = None
+        self.n_proj = None
 
     def initialize(self, measurement_description, *args, **kwargs):
         """
         Initialize the backend with measurement description.
         measurement_description : nparray describing the measurements
-        """        
+        """
         renorm = kwargs.get('renorm', False)
         md_has_ops = kwargs.get('md_has_ops', False)
         max_iters = kwargs.get('max_iters', 100)
         thres = kwargs.get('thres', 1e-6)
         self.paralelize = kwargs.get('paralelize', True)
-        self.batch_size = kwargs.get('batch_size', cpu_count() - 1 )
-   
+        self.batch_size = kwargs.get('batch_size', cpu_count() - 1)
+
         dim = measurement_description.shape[1]
         self.renorm = renorm
         if not md_has_ops:
@@ -138,6 +151,7 @@ class NumpyBackend(BackendTemplate):
         self.thres = thres
         self.last_distance = -1
         self.last_counter = -1
+
         if self.renorm:
             projector_sum_col = np.sum(self.aux_rpv_cols, axis=1)
             proj_sum_eval, proj_sum_evec = np.linalg.eigh(
@@ -159,8 +173,7 @@ class NumpyBackend(BackendTemplate):
             )
         else:
             self.proj_sum_inv = np.eye(1, dtype=complex)
-
-        #pro-forma pass to compile numba
+        # pro-forma pass to compile numba
         self.max_iters = 1
         _ = self.reconstruct(np.ones(self.n_proj))
         self.max_iters = max_iters
@@ -168,7 +181,8 @@ class NumpyBackend(BackendTemplate):
     def set_parameters(self, *args, **kwargs):
         self.max_iters = kwargs.get('max_iters', self.max_iters)
         self.thres = kwargs.get('thres', self.thres)
-
+        self.renorm = kwargs.get('renorm', self.renorm)
+        self.paralelize = kwargs.get('renorm', self.paralelize)
 
     def reconstruct_data(self, tomograms, *args, **kwargs):
         if self.paralelize:
@@ -179,10 +193,9 @@ class NumpyBackend(BackendTemplate):
 
             with ProcessPoolExecutor(self.batch_size) as executor:
                 results = executor.map(foo, tomograms, chunksize=chunksize)
-                return list(results)
+                return np.array(list(results))
         else:
-            return [self.reconstruct(t) for t in tomograms]
-
+            return np.array([self.reconstruct(t) for t in tomograms])
 
     def reconstruct(self, data):
         """Reconstruct data into density matrix using parameters of the Reconstructer object.
@@ -219,8 +232,8 @@ class NumpyBackend(BackendTemplate):
         self.last_counter = counter
         self.last_distance = distance
         return rho
-    
-    #@nb.jit(nopython=True)
+
+    # @nb.jit(nopython=True)
     @staticmethod
     @njit
     def _nb_reconstution_loop_vect(
@@ -284,7 +297,7 @@ class NumpyBackend(BackendTemplate):
                 rho[:, :] = k_operator @ rho @ k_operator
             rho[:, :] = rho / np.trace(rho)  # use tracenorm
             # prepare for next round
-            #consider dot product impl. here
+            # consider dot product impl. here
             distance = np.linalg.norm(rho - rho_old).real
             scaler_vect[:] = 0  # reset scaler_vect
             counter += 1

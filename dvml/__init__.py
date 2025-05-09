@@ -11,7 +11,12 @@ from dvml.face import Reconstructer
 from dvml.backend import get_backend
 from dvml.utils import make_projector_array
 
-logger = logging.getLogger(__name__)
+# Configure the module-wide logger
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("dvml")
 
 __all__ = ["Reconstructer", "make_projector_array"]
 

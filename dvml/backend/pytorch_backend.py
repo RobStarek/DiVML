@@ -39,29 +39,26 @@ Dependencies:
     - NumPy
     - Optional: Numba (for accelerated Gram-Schmidt orthogonalization)
 """
-
 import logging
 import itertools
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-import torch
 import numpy as np
+import torch
+from dvml.backend.backend_template import BackendTemplate
+logger = logging.getLogger(__name__)
 
 try:
     import numba as nb
     njit = nb.njit
-    
 except ImportError:
-    logging.warning("Numba could not be imported.")
+    logger.warning("Numba could not be imported.")
+
     def njit(f):
         return f
-    
-from dvml.backend.backend_template import BackendTemplate
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if DEVICE == 'cpu':
-    logging.warning("Warning: CPU backend used.")
+    logger.warning("Warning: CPU backend used.")
 
 # fast variant
 DTYPE = torch.complex64
@@ -108,6 +105,8 @@ def _guess_needed_memory(batch, dim, projs):
 
 # I have rewritten that in torch, but for some reason
 # it still seems quicker on CPU with numba
+
+
 @njit
 def _gram_schmidt(input_col_vectors):
     """
@@ -122,22 +121,25 @@ def _gram_schmidt(input_col_vectors):
     Original source: https://gist.github.com/iizukak/1287876#gistcomment-1348649
     Modification is that arrays are allocated beforehand to make it run smoothly in numba.
     """
-    #Allocate arrays (for numba)
+    # Allocate arrays (for numba)
     input_col_vectors = input_col_vectors.T
     h, w = input_col_vectors.shape
     output_col_vectors = np.zeros((h, w), dtype=np.complex64)
-    output_col_vectors[0,:] = input_col_vectors[0, :]
-    row = np.zeros((1,w), np.complex64)
-    
-    #Run Gram-Schmidt process
+    output_col_vectors[0, :] = input_col_vectors[0, :]
+    row = np.zeros((1, w), np.complex64)
+
+    # Run Gram-Schmidt process
     for i in range(1, input_col_vectors.shape[0]):
-        Ynorm2 = np.sum(output_col_vectors*output_col_vectors.conj(), axis = 1)    
+        Ynorm2 = np.sum(output_col_vectors*output_col_vectors.conj(), axis=1)
         Ynorm2[i:] = 1
         row[0] = input_col_vectors[i]
-        proj = (row.dot(output_col_vectors.T) / Ynorm2).reshape((-1,1)) * output_col_vectors
+        proj = (row.dot(output_col_vectors.T.conj()) /
+                Ynorm2).reshape((-1, 1)) * output_col_vectors
         proj[i:] = 0
-        output_col_vectors[i] = (input_col_vectors[i, ::1] - proj.sum(0))#.ravel() 
-    out_norm = np.sqrt((np.sum(output_col_vectors*output_col_vectors.conj(), axis = 1)).reshape((-1,1)))    
+        output_col_vectors[i] = (
+            input_col_vectors[i, ::1] - proj.sum(0))  # .ravel()
+    out_norm = np.sqrt(
+        (np.sum(output_col_vectors*output_col_vectors.conj(), axis=1)).reshape((-1, 1)))
     output_col_vectors = output_col_vectors/out_norm
     return output_col_vectors.T
 
@@ -220,9 +222,10 @@ class TorchBackend(BackendTemplate):
         self.last_distance = -1
         self.last_counter = -1
 
-        #numpy-calculation, it is done just once
+        # numpy-calculation, it is done just once
         if self.renorm:
-            projector_sum_col = np.sum(self.aux_meas_ops_cols.cpu().numpy(), axis=1)
+            projector_sum_col = np.sum(
+                self.aux_meas_ops_cols.clone().cpu().numpy(), axis=1)
             proj_sum_eval, proj_sum_evec = np.linalg.eigh(
                 projector_sum_col.reshape((dim, dim)).T
             )
@@ -233,9 +236,8 @@ class TorchBackend(BackendTemplate):
                     np.sum(proj_sum_evec @
                            proj_sum_evec.T.conjugate() - np.eye(dim))
                 )
-                > dim * 1e-14
+                > dim * 1e-8
             ):
-                # to be torch-rewritten
                 proj_sum_evec = _gram_schmidt(proj_sum_evec)
             proj_sum_diag_inv = np.diag(proj_sum_eval**-1)
             self.proj_sum_inv = (
@@ -243,15 +245,17 @@ class TorchBackend(BackendTemplate):
             )
         else:
             self.proj_sum_inv = np.eye(1, dtype=complex)
-
         self.proj_sum_inv = torch.from_numpy(self.proj_sum_inv).to(
-            DTYPE).cuda(device=DEVICE).detach()        
+            DTYPE).cuda(device=DEVICE).detach()
 
     def set_parameters(self, *args, **kwargs):
-        pass
+        self.max_iters = kwargs.get('max_iters', self.max_iters)
+        self.thres = kwargs.get('thres', self.thres)
+        self.renorm = kwargs.get('renorm', self.renorm)
+        self.paralelize = kwargs.get('renorm', self.paralelize)
 
     def reconstruct_data(self, tomograms, *args, **kwargs):
-        dim = self.dim1        
+        dim = self.dim1
         if isinstance(tomograms, np.ndarray):
             chunk_iterator = _npy_chunk_iter(tomograms, self.batch_size)
         else:
@@ -271,7 +275,7 @@ class TorchBackend(BackendTemplate):
 
         Returns:
             ndarray[complex]: reconstructed and trace-normed density matrix, (m,d,d).
-        """        
+        """
         torch.cuda.empty_cache()
         _data_in = np.asarray(datas, dtype=np.float32)
         data_in = torch.from_numpy(_data_in).to(FDTYPE).cuda(device=DEVICE)
@@ -350,7 +354,7 @@ class TorchBackend(BackendTemplate):
                 k_operator = weighted.T.view(
                     batch_size, dim1, dim2).transpose(-2, -1)
                 # Contractive map update (batched)
-                if renorm: #and proj_sum_inv is not None
+                if renorm:  # and proj_sum_inv is not None
                     rho = (torch.matmul(
                         proj_sum_inv @ k_operator, torch.matmul(
                             rho, k_operator)
@@ -361,14 +365,13 @@ class TorchBackend(BackendTemplate):
 
                 # Normalize (batched)
                 traces = torch.einsum('bii->b', rho).view(batch_size, 1, 1)
-                # print(traces.shape)
                 rho /= traces
 
                 # Convergence check (batched Frobenius distance)
                 if (counter % check_every) == 0:
                     distances = torch.linalg.norm(
                         rho - rho_old, dim=(-2, -1)).real
-                    converged = distances <= thres                    
+                    converged = distances <= thres
                     if converged.all():
                         final_distances[converged] = distances[converged]
                         break

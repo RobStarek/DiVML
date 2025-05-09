@@ -29,7 +29,7 @@ class BackendTemplate(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def set_parameters(self, *args, **kwargs):
-        """Set reconstruction parameters."""
+        """Set reconstruction parameters, which are set during initialization."""
         pass
 
     @abc.abstractmethod

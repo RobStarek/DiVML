@@ -1,26 +1,22 @@
 import logging
-# from dvml.backend.dummy_backend import DummyBackend
+from dvml.backend.numpy_backend import NumpyBackend
+# Configure the logger for the backend module
+logger = logging.getLogger("dvml.backend")
+logger.setLevel(logging.INFO)
 
-logger = logging.getLogger(__name__)
-logging.info("Init of backend dvml.module.")
-
-_backend = None
-FORCE_NPY = True
+_backend = NumpyBackend
 
 try:
     import torch
     if torch.cuda.is_available() or torch.version.cuda is not None:
         from dvml.backend.pytorch_backend import TorchBackend
         _backend = TorchBackend
-        logging.info("Torch backend selected.")
+        logger.info("Torch backend selected.")
     else:
-        logging.warning("Torch not applicable! Falling back to numpy.")
+        logger.warning("Torch not applicable! Falling back to numpy.")
         raise ImportError
 except ImportError:
-    from dvml.backend.numpy_backend import NumpyBackend
-    _backend = NumpyBackend
-    logging.info("Numpy backend selected.")
-# _backend = DummyBackend
+    logger.info("Falling back to numpy backend.")
 
 def get_backend():
     return _backend

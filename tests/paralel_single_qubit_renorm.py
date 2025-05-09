@@ -12,6 +12,7 @@ import importlib
 import dvml
 import dvml.utils
 
+
 importlib.reload(dvml)
 importlib.reload(dvml.utils)
 
@@ -61,18 +62,26 @@ if __name__ == '__main__':
     print('Generating data...')
     data = np.array([expectation_value(ket, rho).real for ket in ps])
 
-    my_data = [data]*64
+    my_data = [data]*16
 
     print("Reconstruction...")
     print("With normalization")
-    R = dvml.Reconstructer(pis, max_iters=1000, thres=1e-9, renorm=True, paralelize=True)
+    R = dvml.Reconstructer(pis, max_iters=100, thres=1e-9, renorm=True, paralelize=True)
+    # np.save('test_hinv_numpy.npy', R._backend.proj_sum_inv)
     print(R)
     out = R.reconstruct(my_data)
     print("P=", purity(out[0]).real)
+    fid = np.trace(out[0] @ rho)/(np.trace(out[0]).real * np.trace(rho).real)
+    print("F=", fid.real)
+    # import matplotlib.pyplot as plt
+    # plt.matshow(np.abs(out[0]))
+    # plt.show()
     
-    print("And without normalization")
-    R = dvml.Reconstructer(pis, max_iters=1000, thres=1e-9, renorm=False, paralelize=True)
-    print(R)
-    out = R.reconstruct(my_data)
-    print("P=", purity(out[0]).real)
+    # print("And without normalization")
+    # R = dvml.Reconstructer(pis, max_iters=1000, thres=1e-9, renorm=False, paralelize=True)
+    # print(R)
+    # out = R.reconstruct(my_data).astype(np.complex128)
+    # print("P=", purity(out[0]).real)
+    # fid = np.trace(out[0] @ rho)/(np.trace(out[0]).real * np.trace(rho).real)
+    # print("F=", fid.real)
     
