@@ -1,10 +1,13 @@
-# dvml
+# DiVML
 
 Discrete-variable quantum maximum-likelihood reconstruction.
 
 ## Features
-- Maximum-likelihood reconstruction using PyTorch.
-- Utility functions for quantum state reconstruction.
+- Maximum-likelihood reconstruction using PyTorch and numba/numpy.
+- Reconstruction of quantum processes and states.
+- Support for renormalization.
+- GPU-batched processing.
+
 
 ## Installation
 
