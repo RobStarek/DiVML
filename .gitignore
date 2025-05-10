@@ -11,6 +11,7 @@ examples/__pycache__/
 # # Distribution / packaging
 # bin/
 build/
+backups/
 
 # develop-eggs/
 # dist/

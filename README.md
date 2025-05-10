@@ -3,15 +3,30 @@
 Discrete-variable quantum maximum-likelihood reconstruction.
 
 ## Features
+
 - Maximum-likelihood reconstruction using PyTorch and numba/numpy.
 - Reconstruction of quantum processes and states.
 - Support for renormalization.
 - GPU-batched processing.
 
 
+## Available backends
+GPU using CUDA is automatically selected, if available, otherwise 
+the backage falls back to numba-compiled numpy or in worst case to
+plain numpy.
+
+## Requirements
+
+This module was built using python 3.12 and the following dependencies:
+* numpy 1.26.4
+* numba 0.61.2
+* torch 2.5.1
+But it does not use latest features of these packages, so it is likely to 
+work with lower versions as well.
+
 ## Installation
 
-Here is how it can be installed locally.
+Here is how it can be installed locally. I recommend using dedicated environment for this.
 
 First, build the package:
 ```bash
@@ -21,12 +36,11 @@ and then, use pip to install it:
 ```bash
 pip install dist/divml-0.1.0.tar.gz  
 ```
-Or type
-```
+Or open terminal in the root directory and type
+```bash
 pip install -e
 ```
-in the root directory.
-I recommend using dedicated environment.
+
 
 ## Example:
 
