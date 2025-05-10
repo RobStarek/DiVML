@@ -36,6 +36,10 @@ except ImportError:
     def njit(f):
         return f
 
+DEFAULT_MAX_ITERS = 100
+DEFAULT_THRES = 1e-6
+HERM_TOL = 1e-12
+ORTH_TOL = 1e-12
 
 @njit
 def _gram_schmidt(input_col_vectors):
@@ -127,8 +131,8 @@ class NumpyBackend(BackendTemplate):
         """
         renorm = kwargs.get('renorm', False)
         md_has_ops = kwargs.get('md_has_ops', False)
-        max_iters = kwargs.get('max_iters', 100)
-        thres = kwargs.get('thres', 1e-6)
+        max_iters = kwargs.get('max_iters', DEFAULT_MAX_ITERS)
+        thres = kwargs.get('thres', DEFAULT_THRES)
         self.paralelize = kwargs.get('paralelize', True)
         self.batch_size = kwargs.get('batch_size', cpu_count() - 1)
 
@@ -157,14 +161,14 @@ class NumpyBackend(BackendTemplate):
             proj_sum_eval, proj_sum_evec = np.linalg.eigh(
                 projector_sum_col.reshape((dim, dim)).T
             )
-            if np.sum(np.abs(proj_sum_eval - proj_sum_eval[0])) < dim * 1e-14:
+            if np.sum(np.abs(proj_sum_eval - proj_sum_eval[0])) < dim * HERM_TOL:
                 proj_sum_evec = np.eye(dim, dtype=complex)
             elif (
                 np.abs(
                     np.sum(proj_sum_evec @
                            proj_sum_evec.T.conjugate() - np.eye(dim))
                 )
-                > dim * 1e-14
+                > dim * ORTH_TOL
             ):
                 proj_sum_evec = _gram_schmidt(proj_sum_evec)
             proj_sum_diag_inv = np.diag(proj_sum_eval**-1)

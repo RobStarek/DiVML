@@ -43,7 +43,7 @@ class Reconstructer(object):
     - `set_parameters(*args, **kwargs)`: Updates backend parameters.
     """    
     
-    def __init__(self, meas_description : np.ndarray, **kwargs):
+    def __init__(self, meas_description : np.ndarray, **kwargs) -> None:
         """
         Initializes the face object with a measurement description and additional parameters.
 
@@ -65,7 +65,7 @@ class Reconstructer(object):
         self._backend = backend_class() #instantiate
         self._backend.initialize(meas_description, **kwargs)
 
-    def reconstruct(self, data : np.ndarray):
+    def reconstruct(self, data : np.ndarray) -> np.ndarray:
         """
         Reconstructs the given data using the backend's reconstruction method.
 
@@ -81,7 +81,7 @@ class Reconstructer(object):
         logger.debug("Reconstructing...")
         return self._backend.reconstruct_data(data)
 
-    def set_parameters(self, *args, **kwargs):
+    def set_parameters(self, *args, **kwargs) -> None:
         self._backend(*args, **kwargs)
 
 

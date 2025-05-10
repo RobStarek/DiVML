@@ -8,10 +8,10 @@ from multiprocessing import Process, freeze_support
 import unittest
 from functools import reduce
 import numpy as np
-import sys
-import os
-sys.path.insert(0, os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..')))
+# import sys
+# import os
+# sys.path.insert(0, os.path.abspath(
+#     os.path.join(os.path.dirname(__file__), '..')))
 import dvml.utils
 import dvml
 

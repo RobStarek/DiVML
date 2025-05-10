@@ -63,6 +63,15 @@ if DEVICE == 'cpu':
 # fast variant
 DTYPE = torch.complex64
 FDTYPE = torch.float32
+# # precise variant
+# DTYPE = torch.complex128
+# FDTYPE = torch.float64
+
+DEFAULT_MAX_ITERS = 100
+DEFAULT_THRES = 1e-6
+HERM_TOL = 1e-8
+ORTH_TOL = 1e-7
+
 
 
 def _npy_chunk_iter(array, batch_size):
@@ -186,8 +195,8 @@ class TorchBackend(BackendTemplate):
         # rp_rho = (rpv_gpu.reshape((nproj, dim, 1)) * rpv_gpu.conj().reshape((nproj, 1, dim)))
         self.renorm = kwargs.get('renorm', False)
         md_has_ops = kwargs.get('md_has_ops', False)
-        self.max_iters = kwargs.get('max_iters', 100)
-        self.thres = kwargs.get('thres', 1e-6)
+        self.max_iters = kwargs.get('max_iters', DEFAULT_MAX_ITERS)
+        self.thres = kwargs.get('thres', DEFAULT_THRES)
         self.paralelize = kwargs.get('paralelize', True)
         dim = measurement_description.shape[1]
 
@@ -229,14 +238,14 @@ class TorchBackend(BackendTemplate):
             proj_sum_eval, proj_sum_evec = np.linalg.eigh(
                 projector_sum_col.reshape((dim, dim)).T
             )
-            if np.sum(np.abs(proj_sum_eval - proj_sum_eval[0])) < dim * 1e-14:
+            if np.sum(np.abs(proj_sum_eval - proj_sum_eval[0])) < dim * HERM_TOL:
                 proj_sum_evec = np.eye(dim, dtype=complex)
             elif (
                 np.abs(
                     np.sum(proj_sum_evec @
                            proj_sum_evec.T.conjugate() - np.eye(dim))
                 )
-                > dim * 1e-8
+                > dim * ORTH_TOL
             ):
                 proj_sum_evec = _gram_schmidt(proj_sum_evec)
             proj_sum_diag_inv = np.diag(proj_sum_eval**-1)

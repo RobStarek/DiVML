@@ -15,6 +15,4 @@ dvml/backend/backend_template.py
 dvml/backend/dummy_backend.py
 dvml/backend/numpy_backend.py
 dvml/backend/pytorch_backend.py
-tests/__init__.py
 tests/image_recon.py
-tests/test.py

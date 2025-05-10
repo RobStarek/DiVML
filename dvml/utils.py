@@ -5,8 +5,7 @@ import functools
 # Auxiliary string, used to generate einsum expressions
 _ALPHABET = ",".join([chr(97 + i) for i in range(10)])
 
-
-def veckron(*vecs):
+def veckron(*vecs) -> np.ndarray:
     """Kronecker product of multiple vectors.
     If there is only 1 vector, result is trivial.
     For up to 9 vectors, it is implemented with einsum.
@@ -24,7 +23,7 @@ def veckron(*vecs):
     return np.einsum(_ALPHABET[0: 2 * n - 1], *(v.ravel() for v in vecs)).reshape(-1, 1)
 
 
-def make_projector_array(projection_order, process_tomo=False):
+def make_projector_array(projection_order : list , process_tomo : bool = False) -> np.ndarray:
     """
     Create list preparation-projection kets.
     Kets are stored as line-vectors or column-vectors in n x d ndarray.
@@ -49,4 +48,3 @@ def make_projector_array(projection_order, process_tomo=False):
         [veckron(*kets) for kets in itertools.product(*views)], dtype=complex
     )
 
-#TODO: Pauli matrices, eigenbases, constants
