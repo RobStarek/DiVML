@@ -21,6 +21,12 @@ and then, use pip to install it:
 ```bash
 pip install dist/divml-0.1.0.tar.gz  
 ```
+Or type
+```
+pip install -e
+```
+in the root directory.
+I recommend using dedicated environment.
 
 ## Example:
 
