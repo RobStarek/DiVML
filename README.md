@@ -28,7 +28,7 @@ work with lower versions as well.
 
 Here is how it can be installed locally. I recommend using dedicated environment for this.
 
-First, build the package:
+First one can clone the repository and then build the package:
 ```bash
 python setup.py sdist bdist_wheel   
 ```
@@ -40,6 +40,12 @@ Or open terminal in the root directory and type
 ```bash
 pip install -e
 ```
+
+Alternatively, one can pip it directly from github:
+```bash
+pip install git+http://github.org/RobStarek/DiVML
+```
+
 
 
 ## Example:
